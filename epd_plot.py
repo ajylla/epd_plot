@@ -1,6 +1,7 @@
 from epd_loader import *
 from matplotlib.ticker import LinearLocator, MultipleLocator, AutoMinorLocator
 import matplotlib.dates as mdates
+from matplotlib.ticker import FormatStrFormatter
 
 def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgstart, bgend, channels = 
                  [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33], averaging_mode='none', averaging=2):
@@ -150,7 +151,7 @@ def plot_channels(args, bg_subtraction=False, savefig=False, key=''):
         
     # Saves figure, if enabled.
     if(savefig):
-        plt.savefig('/home/smurf/srl/images/channels-' + str(df_info['Plot_start'][0][:-5]) + '-' + str(key) + '.jpg', bbox_inches='tight')
+        plt.savefig('/home/smurf/srl/images/channels-' + str(df_info['Plot_start'][0][:-5]) + str(key) + '.jpg', bbox_inches='tight')
         
     plt.show()
         
@@ -163,12 +164,12 @@ def plot_spectrum(args, bg_subtraction=True, savefig=False, key=''):
         ax = df_info.plot.scatter(x='Primary_energy', y='Bg_subtracted_peak', c='red', label='Flux peaks', figsize=(13,10))
         ax.errorbar(x=df_info['Primary_energy'], y=df_info['Bg_subtracted_peak'], yerr=df_info['Peak_electron_uncertainty'], 
                     xerr=[df_info['Energy_error_low'], df_info['Energy_error_high']], fmt='.', ecolor='red', alpha=0.5)
-        plt.title(str(df_info['Plot_start'][0][:-5]) + ' flux peaks, bg subtraction on')
+        plt.title(str(df_info['Plot_start'][0][:-5]) + ' flux peaks, bg subtraction on', size=18)
     elif(bg_subtraction == False):
         ax = df_info.plot.scatter(x='Primary_energy', y='Flux_peak', c='red', label='Flux peaks', figsize=(13,10))
         ax.errorbar(x=df_info['Primary_energy'], y=df_info['Flux_peak'], yerr=df_info['Peak_electron_uncertainty'], 
                     xerr=[df_info['Energy_error_low'], df_info['Energy_error_high']], fmt='.', ecolor='red', alpha=0.5)
-        plt.title(str(df_info['Plot_start'][0][:-5]) + ' flux peaks, bg subtraction off')
+        plt.title(str(df_info['Plot_start'][0][:-5]) + ' flux peaks, bg subtraction off', size=18)
     
     # Plots background flux and background errorbars in same scatterplot.
     df_info.plot(kind='scatter', x='Primary_energy', y='Background_flux', c='red', alpha=0.25, ax=ax, label='Background flux')
@@ -177,12 +178,22 @@ def plot_spectrum(args, bg_subtraction=True, savefig=False, key=''):
     
     ax.set_yscale('log')
     ax.set_xscale('log')
-    ax.set_xlabel('Energy [MeV]')
-    ax.set_ylabel('Flux \n [1/s cm$^2$ sr MeV]')
+    ax.set_xlabel('Energy [MeV]', size=20)
+    ax.set_ylabel('Flux \n [1/s cm$^2$ sr MeV]', size=20)
+    plt.tick_params(axis='x', which='minor', labelsize=16)
+    ax.xaxis.set_minor_formatter(FormatStrFormatter("%.2f"))
+    #plt.tick_params(axis='y', which='minor')
+    #ax.yaxis.set_minor_formatter(FormatStrFormatter("%.0f"))
+    plt.legend(prop={'size': 18})
+    plt.xticks(size=16)
+    plt.yticks(size=16)
     plt.grid()
     
+    for label in ax.xaxis.get_ticklabels(which='minor')[1::2]:
+        label.set_visible(False)
+    
     if(savefig):
-        plt.savefig('/home/smurf/srl/images/spectrum-' + str(df_info['Plot_start'][0][:-5]) + '-' + str(key) + '.jpg', dpi=300, bbox_inches='tight')
+        plt.savefig('/home/smurf/srl/images/spectrum-' + str(df_info['Plot_start'][0][:-5]) + str(key) + '.jpg', dpi=300, bbox_inches='tight')
         
     plt.show()
     
@@ -190,4 +201,4 @@ def write_to_csv(args, key=''):
     
     df_info = args[1]
     
-    df_info.to_csv('/home/smurf/srl/csv/electron_data-' + str(df_info['Plot_start'][0][:-5]) + '-' + str(key) + '.csv', index=False)
+    df_info.to_csv('/home/smurf/srl/csv/electron_data-' + str(df_info['Plot_start'][0][:-5]) + str(key) + '.csv', index=False)
