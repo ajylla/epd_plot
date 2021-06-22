@@ -3,27 +3,52 @@ from matplotlib.ticker import LinearLocator, MultipleLocator, AutoMinorLocator
 import matplotlib.dates as mdates
 from matplotlib.ticker import FormatStrFormatter
 
-def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgstart, bgend, channels = 
-                 [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33], averaging_mode='none', averaging=2):
-    
-    # Energy bin boundaries.
-    e_low = [0.0312, 0.0330, 0.0348, 0.0380, 0.0406, 0.0432, 0.0459, 0.0497, 0.0533, 0.0580, 0.0627, 0.0673, 0.0731, 0.0788, 0.0856, 0.0934, 0.1011, 0.1109, 0.1197, 0.1305, 0.1423, 0.1541, 0.1679, 0.1835, 0.1995, 0.2181, 0.2371, 0.2578, 0.2817, 0.3061, 0.3339, 0.3661, 0.3989, 0.4348]
-    e_high = [0.0348, 0.0369, 0.0380, 0.0406, 0.0432, 0.0459, 0.0497, 0.0533, 0.0580, 0.0627, 0.0673, 0.0731, 0.0788, 0.0856, 0.0934, 0.1011, 0.1109, 0.1197, 0.1305, 0.1423, 0.1541, 0.1679, 0.1835, 0.1995, 0.2181, 0.2371, 0.2578, 0.2817, 0.3061, 0.3339, 0.3661, 0.3989, 0.4348, 0.4714]
-    
+def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgstart, bgend, instrument = 'ept', data_type = 'l2', averaging_mode='none', averaging=2):
+    '''
+    plotstart = pd.Timestamp(plotstart)
+    plotend = pd.Timestamp(plotend)
+    searchstart = pd.Timestamp(searchstart)
+    searchend = pd.Timestamp(searchend)
+    bgstart = pd.Timestamp(bgstart)
+    bgend = pd.Timestamp(bgend)
+    '''
+    if(averaging_mode == 'rolling_mean'):
+        df_electrons = df_electrons.resample('{}min'.format(averaging)).mean()
+    elif(averaging_mode == 'rolling_window'):
+        df_electrons = df_electrons.rolling(window=averaging, min_periods=1).mean()
+        
     # Takes electron flux and uncertainty values from original data.
-    df_electron_fluxes = df_electrons['Electron_Flux']
-    df_electron_uncertainties = df_electrons['Electron_Uncertainty']
+    df_electron_fluxes = df_electrons['Electron_Flux'][plotstart:plotend]
+    df_electron_uncertainties = df_electrons['Electron_Uncertainty'][plotstart:plotend]
     
-    # Does averaging (if selected) on flux and uncertainty data and selects only the plot area range of data.
-    if(averaging_mode=='none'):
-        df_electron_fluxes = df_electron_fluxes[plotstart:plotend]
-        df_electron_uncertainties = df_electron_uncertainties[plotstart:plotend]
-    elif(averaging_mode=='rolling_window'):
-        df_electron_fluxes = df_electron_fluxes.rolling(window=averaging, min_periods=1).mean()[plotstart:plotend]
-        df_electron_uncertainties = df_electron_uncertainties.rolling(window=averaging, min_periods=1).mean()[plotstart:plotend]
-    elif(averaging_mode=='rolling_mean'):
-        df_electron_fluxes = df_electron_fluxes.resample('{}min'.format(averaging)).mean()[plotstart:plotend]
-        df_electron_uncertainties = df_electron_uncertainties.resample('{}min'.format(averaging)).mean()[plotstart:plotend]
+    # Pretty bad workarounds for implementing low-latency data.
+    if(instrument == 'ept'):
+        if(data_type == 'll'):
+            channels = [0,1,2,3,4,5,6,7]
+
+            for i in channels:
+                df_electron_fluxes = df_electron_fluxes.rename(columns={'Ele_Flux_{}'.format(i):'Electron_Flux_{}'.format(i)})
+                df_electron_uncertainties = df_electron_uncertainties.rename(columns={'Ele_Flux_Sigma_{}'.format(i):'Electron_Uncertainty_{}'.format(i)})
+
+            e_low = [0.0329, 0.0411, 0.0537, 0.0733, 0.1013, 0.1425, 0.1997, 0.2821]
+            e_high = [0.0411, 0.0537, 0.0733, 0.1013, 0.1425, 0.1997, 0.2821, 0.3977]
+
+        if(data_type == 'l2'):
+            channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33]
+            
+            e_low = [0.0312, 0.0330, 0.0348, 0.0380, 0.0406, 0.0432, 0.0459, 0.0497, 0.0533, 0.0580, 0.0627, 0.0673, 0.0731, 0.0788, 0.0856, 0.0934, 0.1011, 0.1109, 0.1197, 0.1305, 0.1423, 0.1541, 0.1679, 0.1835, 0.1995, 0.2181, 0.2371, 0.2578, 0.2817, 0.3061, 0.3339, 0.3661, 0.3989, 0.4348]
+            e_high = [0.0348, 0.0369, 0.0380, 0.0406, 0.0432, 0.0459, 0.0497, 0.0533, 0.0580, 0.0627, 0.0673, 0.0731, 0.0788, 0.0856, 0.0934, 0.1011, 0.1109, 0.1197, 0.1305, 0.1423, 0.1541, 0.1679, 0.1835, 0.1995, 0.2181, 0.2371, 0.2578, 0.2817, 0.3061, 0.3339, 0.3661, 0.3989, 0.4348, 0.4714]
+    
+    elif(instrument == 'het'):
+        if(data_type == 'll'):
+            channels = [0,1,2,3]
+    
+            for i in channels:
+                df_electron_fluxes = df_electron_fluxes.rename(columns={'Ele_Flux_{}'.format(i):'Electron_Flux_{}'.format(i)})
+                df_electron_uncertainties = df_electron_uncertainties.rename(columns={'Ele_Flux_Sigma_{}'.format(i):'Electron_Uncertainty_{}'.format(i)})
+                
+            e_low = [0.4533, 1.0530, 2.4010, 5.9930]
+            e_high = [1.0380, 2.4010, 5.9930, 18.8300]
     
     # Main information dataframe containing most of the required data.
     df_info = pd.DataFrame({'Plot_start':[], 'Plot_end':[], 'Bg_start':[], 'Bg_end':[], 'Averaging':[], 'Energy_channel':[], 'Primary_energy':[], 'Energy_error_low':[], 'Energy_error_high':[], 'Peak_timestamp':[], 'Flux_peak':[], 'Peak_electron_uncertainty':[], 'Background_flux':[],'Bg_electron_uncertainty':[], 'Bg_subtracted_peak':[]})
@@ -44,7 +69,11 @@ def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgsta
     primary_energies = []
     for i in range(0,len(e_low)):
         primary_energies.append(np.sqrt(e_low[i]*e_high[i]))
-    df_info['Primary_energy'] = primary_energies
+    
+    primary_energies_channels = []
+    for energy in channels:
+        primary_energies_channels.append(primary_energies[energy])
+    df_info['Primary_energy'] = primary_energies_channels
         
     # Next blocks of code calculate information from data and append them to main info df.
     list_bg_fluxes = []
@@ -89,8 +118,15 @@ def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgsta
     for i in range(0,len(primary_energies)):
         energy_error_low.append(primary_energies[i]-e_low[i])
         energy_error_high.append(e_high[i]-primary_energies[i])
-    df_info['Energy_error_low'] = energy_error_low
-    df_info['Energy_error_high'] = energy_error_high
+        
+    energy_error_low_channels = []
+    energy_error_high_channels = []
+    for i in channels:
+        energy_error_low_channels.append(energy_error_low[i])
+        energy_error_high_channels.append(energy_error_high[i])
+    
+    df_info['Energy_error_low'] = energy_error_low_channels
+    df_info['Energy_error_high'] = energy_error_high_channels
     
     return df_electron_fluxes, df_info, [searchstart, searchend], [e_low, e_high]
 
@@ -125,9 +161,9 @@ def plot_channels(args, bg_subtraction=False, savefig=False, key=''):
     n=1
     for channel in df_info['Energy_channel']:
         ax = fig.add_subplot(len(df_info['Energy_channel']),1,n)
-        ax = df_electron_fluxes['Electron_Flux_{}'.format(channel)].plot(logy=True, figsize=(20,40), color='red')
+        ax = df_electron_fluxes['Electron_Flux_{}'.format(channel)].plot(logy=True, figsize=(20,15), color='red')
         
-        plt.text(0.025,0.55, str(energy_bin[0][channel]) + " - " + str(energy_bin[1][channel]) + " MeV", transform=ax.transAxes)
+        plt.text(0.025,0.85, str(energy_bin[0][channel]) + " - " + str(energy_bin[1][channel]) + " MeV", transform=ax.transAxes, size=15)
         
         # Search area vertical lines.
         ax.axvline(search_area[0], color='black')
@@ -139,15 +175,16 @@ def plot_channels(args, bg_subtraction=False, savefig=False, key=''):
         # Background measurement area.
         ax.axvspan(df_info['Bg_start'][0], df_info['Bg_end'][0], color='gray', alpha=0.25)
         
-        if(n != len(df_info['Energy_channel'])):
-            ax.get_xaxis().set_visible(False)
+        ax.get_xaxis().set_visible(False)
+        
+        if(n == len(df_info['Energy_channel'])):
+            ax.get_xaxis().set_visible(True)
            
         plt.xlabel("")
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d\n%H:%M"))
-        ax.xaxis.set_minor_locator(hours)
-        ax.get_xaxis().set_visible(True)
-        
-        n=n+1
+        #ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d\n%H:%M"))
+        #ax.xaxis.set_minor_locator(hours)
+              
+        n+=1
         
     # Saves figure, if enabled.
     if(savefig):
@@ -202,3 +239,23 @@ def write_to_csv(args, key=''):
     df_info = args[1]
     
     df_info.to_csv('/home/smurf/srl/csv/electron_data-' + str(df_info['Plot_start'][0][:-5]) + str(key) + '.csv', index=False)
+    
+def acc_flux(args, time=[]):
+    
+    df_electron_fluxes = args[0]
+    df_info = args[1]
+    
+    # If no timeframe specified, use search area.
+    if(time==[]):
+        time = args[2]
+        
+    # Calculates average fluxes for each enery channel from given timeframe and appends to list.
+    list_flux_averages = []
+    for channel in df_info['Energy_channel']:
+        list_flux_averages.append(df_electron_fluxes['Electron_Flux_{}'.format(channel)][time[0]:time[1]].mean())
+        
+    df_acc = pd.DataFrame({'Primary_energy':[], 'Acc_flux':[]})
+    df_acc['Primary_energy'] = df_info['Primary_energy']
+    df_acc['Acc_flux'] = list_flux_averages
+    
+    ax = df_acc.plot(kind='scatter', x='Primary_energy', y='Acc_flux', logy=True, logx=True, color='green', figsize=(13,10))
