@@ -1,4 +1,4 @@
-![](/home/smurf/srl/git/readme-material/image3775.png)
+![](https://i.imgur.com/VbfxACB.png)
 
 ## epd_plot.py
 
