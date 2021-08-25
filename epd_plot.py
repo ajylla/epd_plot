@@ -213,7 +213,7 @@ def extract_data(df_protons, df_electrons, plotstart, plotend, searchstart, sear
 # Workaround for STEP data, there's probably a better way in Python to handle this.
 def extract_step_data(df_particles, plotstart, plotend, searchstart, searchend, bgstart, bgend, instrument = 'step', data_type = 'l2', averaging_mode='none', averaging=2, masking=False, ion_conta_corr=False):
 
-    return extract_data(df_particles, df_particles, plotstart, plotend, searchstart, searchend, bgstart, bgend, instrument = 'step', data_type = 'l2', averaging_mode='none', averaging=2, masking=False, ion_conta_corr=False)
+    return extract_data(df_particles, df_particles, plotstart, plotend, searchstart, searchend, bgstart, bgend, instrument = instrument, data_type = data_type, averaging_mode=averaging_mode, averaging=averaging, masking=masking, ion_conta_corr=ion_conta_corr)
 
 def make_step_electron_flux(stepdata, mask_conta=True):
     '''
@@ -481,11 +481,11 @@ def write_to_csv(args, path='', key=''):
     
     filename = 'electron_data-' + str(df_info['Plot_period'][0][:-5]) + '-' + instrument.upper() + '-' + data_type.upper()
 
-    if(df_info['Averaging'] == 'Mean'):
+    if(df_info['Averaging'][0] == 'Mean'):
         
         filename = filename + '-' + df_info['Averaging'][1].split()[2] + '_averaging'
 
-    elif(df_info['Averaging'] == 'No averaging'):
+    elif(df_info['Averaging'][0] == 'No averaging'):
 
         filename = filename + '-no_averaging'
 
