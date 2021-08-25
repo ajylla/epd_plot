@@ -4,19 +4,18 @@ import matplotlib.dates as mdates
 from matplotlib.ticker import FormatStrFormatter
 from adjustText import adjust_text
 
-def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgstart, bgend, instrument = 'ept', data_type = 'l2', averaging_mode='none', averaging=2):
+def extract_data(df_protons, df_electrons, plotstart, plotend, searchstart, searchend, bgstart, bgend, instrument = 'ept', data_type = 'l2', averaging_mode='none', averaging=2, masking=False, ion_conta_corr=False):
 
+    # Takes proton and electron flux and uncertainty values from original data.
     if(instrument != 'step'):
-        df_electron_fluxes = df_electrons['Electron_Flux']
-        df_electron_uncertainties = df_electrons['Electron_Uncertainty']
 
-    # Takes electron flux and uncertainty values from original data.
-    if(instrument != 'step'):
         df_electron_fluxes = df_electrons['Electron_Flux'][plotstart:plotend]
         df_electron_uncertainties = df_electrons['Electron_Uncertainty'][plotstart:plotend]
 
-    # Pretty bad workarounds for implementing low-latency data.
     if(instrument == 'ept'):
+
+        df_proton_fluxes = df_protons['Ion_Flux'][plotstart:plotend]
+        df_proton_uncertainties = df_protons['Ion_Uncertainty'][plotstart:plotend]
 
         if(data_type == 'll'):
 
@@ -31,7 +30,7 @@ def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgsta
 
         elif(data_type == 'l2'):
 
-            channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33]
+            channels = range(0,34) 
 
             e_low = [0.0312, 0.0330, 0.0348, 0.0380, 0.0406, 0.0432, 0.0459, 0.0497, 0.0533, 0.0580, 0.0627, 0.0673, 0.0731, 0.0788, 0.0856, 0.0934, 0.1011, 0.1109, 0.1197, 0.1305, 0.1423, 0.1541, 0.1679, 0.1835, 0.1995, 0.2181, 0.2371, 0.2578, 0.2817, 0.3061, 0.3339, 0.3661, 0.3989, 0.4348]
             e_high = [0.0348, 0.0369, 0.0380, 0.0406, 0.0432, 0.0459, 0.0497, 0.0533, 0.0580, 0.0627, 0.0673, 0.0731, 0.0788, 0.0856, 0.0934, 0.1011, 0.1109, 0.1197, 0.1305, 0.1423, 0.1541, 0.1679, 0.1835, 0.1995, 0.2181, 0.2371, 0.2578, 0.2817, 0.3061, 0.3339, 0.3661, 0.3989, 0.4348, 0.4714]
@@ -62,43 +61,81 @@ def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgsta
 
             channels = range(0,48)
 
-            step_data = make_step_electron_flux(df_electrons)
+            step_data = make_step_electron_flux(df_electrons, mask_conta=masking)
             df_electron_fluxes = step_data[0][plotstart:plotend]
             df_electron_uncertainties = step_data[1][plotstart:plotend]
 
             e_low = step_data[2]
             e_high = step_data[3]
 
+        # Cleans up negative flux values in STEP data.
+        df_electron_fluxes[df_electron_fluxes<0] = np.NaN
+
     if(averaging_mode == 'mean'):
+
+        if(instrument=='ept'):
+
+            df_proton_fluxes =df_proton_fluxes.resample('{}min'.format(averaging)).mean()
+            df_proton_uncertainties = df_proton_uncertainties.resample('{}min'.format(averaging)).apply(average_flux_error)
+
         df_electron_fluxes = df_electron_fluxes.resample('{}min'.format(averaging)).mean()
         df_electron_uncertainties = df_electron_uncertainties.resample('{}min'.format(averaging)).apply(average_flux_error)
+
+    # The rolling window might be broken, but it's not ever used.
     elif(averaging_mode == 'rolling_window'):
+
         df_electron_fluxes = df_electron_fluxes.rolling(window=averaging, min_periods=1).mean()
 
 
+    if(ion_conta_corr and (instrument == 'ept')):
+
+        ion_cont_corr_matrix = np.loadtxt('EPT_ion_contamination_flux_paco.dat')
+        Electron_Flux_cont = np.zeros(np.shape(df_electron_fluxes))
+        Electron_Uncertainty_cont = np.zeros(np.shape(df_electron_uncertainties))
+
+        for tt in range(len(df_electron_fluxes)):
+
+            # Electron_Flux_cont[tt,:] = np.sum(ion_cont_corr_matrix * df_protons.Ion_Flux.values[tt,:], axis=1)
+            Electron_Flux_cont[tt, :] = np.matmul(ion_cont_corr_matrix, df_proton_fluxes.values[tt, :])
+            Electron_Uncertainty_cont[tt, :] = np.sqrt(np.matmul(ion_cont_corr_matrix**2, df_proton_uncertainties.values[tt, :]**2 ))
+
+        df_electron_fluxes = df_electron_fluxes - Electron_Flux_cont
+        df_electron_uncertainties = np.sqrt(df_electron_uncertainties**2 + Electron_Uncertainty_cont**2 )
+
     # Main information dataframe containing most of the required data.
-    df_info = pd.DataFrame({'Plot_start':[], 'Plot_end':[], 'Bg_start':[], 'Bg_end':[], 'Averaging':[], 'Energy_channel':[], 'Primary_energy':[], 'Energy_error_low':[], 'Energy_error_high':[], 'Peak_timestamp':[], 'Flux_peak':[], 'Peak_significance':[], 'Peak_electron_uncertainty':[], 'Background_flux':[],'Bg_electron_uncertainty':[], 'Bg_subtracted_peak':[]})
+    df_info = pd.DataFrame({'Plot_period':[], 'Search_period':[], 'Bg_period':[], 'Averaging':[], 'Ion_contamination_correction':[], 'Energy_channel':[], 'Primary_energy':[], 'Energy_error_low':[], 'Energy_error_high':[], 'Peak_timestamp':[], 'Flux_peak':[], 'Peak_significance':[], 'Peak_electron_uncertainty':[], 'Background_flux':[],'Bg_electron_uncertainty':[], 'Bg_subtracted_peak':[]})
 
     # Adds basic metadata to main info df.
-    df_info['Plot_start'] = [plotstart]+['']*(len(channels)-1)
-    df_info['Plot_end'] = [plotend]+['']*(len(channels)-1)
-    df_info['Bg_start'] = [bgstart]+['']*(len(channels)-1)
-    df_info['Bg_end'] = [bgend]+['']*(len(channels)-1)
+    df_info['Plot_period'] = [plotstart]+[plotend]+['']*(len(channels)-2)
+    df_info['Search_period'] = [searchstart]+[searchend]+['']*(len(channels)-2)
+    df_info['Bg_period'] = [bgstart]+[bgend]+['']*(len(channels)-2)
+    df_info['Ion_contamination_correction'] = [ion_conta_corr]+['']*(len(channels)-1)
+
     if(averaging_mode == 'none'):
+
         df_info['Averaging'] = ['No averaging']+['']*(len(channels)-1)
+
     elif(averaging_mode == 'rolling_window'):
+
         df_info['Averaging'] = ['Rolling window', 'Window size = ' + str(averaging)] + ['']*(len(channels)-2)
+
     elif(averaging_mode == 'mean'):
+
         df_info['Averaging'] = ['Mean', 'Resampled to ' + str(averaging) + 'min'] + ['']*(len(channels)-2)
 
     # Energy bin primary energies; geometric mean.
     primary_energies = []
+
     for i in range(0,len(e_low)):
+
         primary_energies.append(np.sqrt(e_low[i]*e_high[i]))
 
     primary_energies_channels = []
+
     for energy in channels:
+
         primary_energies_channels.append(primary_energies[energy])
+
     df_info['Primary_energy'] = primary_energies_channels
 
     # Next blocks of code calculate information from data and append them to main info df.
@@ -112,7 +149,8 @@ def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgsta
     list_peak_significance = []
 
     for channel in channels:
-        bg_flux = df_electron_fluxes['Electron_Flux_{}'.format(channel)][bgstart:bgend].mean()
+
+        bg_flux = df_electron_fluxes['Electron_Flux_{}'.format(channel)][bgstart:bgend].mean(skipna=True)
         list_bg_fluxes.append(bg_flux)
 
         flux_peak = df_electron_fluxes['Electron_Flux_{}'.format(channel)][searchstart:searchend].max()
@@ -137,6 +175,7 @@ def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgsta
 
 
     for i in range(0,len(list_flux_peaks)):
+
         list_bg_subtracted_peaks.append(list_flux_peaks[i]-list_bg_fluxes[i])
         list_peak_significance.append(list_bg_subtracted_peaks[i]/list_bg_std[i])
 
@@ -152,13 +191,17 @@ def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgsta
     # Calculates energy errors for spectrum plot.
     energy_error_low = []
     energy_error_high = []
+
     for i in range(0,len(primary_energies)):
+
         energy_error_low.append(primary_energies[i]-e_low[i])
         energy_error_high.append(e_high[i]-primary_energies[i])
 
     energy_error_low_channels = []
     energy_error_high_channels = []
+
     for i in channels:
+
         energy_error_low_channels.append(energy_error_low[i])
         energy_error_high_channels.append(energy_error_high[i])
 
@@ -167,7 +210,12 @@ def extract_data(df_electrons, plotstart, plotend, searchstart, searchend, bgsta
 
     return df_electron_fluxes, df_info, [searchstart, searchend], [e_low, e_high], [instrument, data_type]
 
-def make_step_electron_flux(stepdata, mask_conta=False):
+# Workaround for STEP data, there's probably a better way in Python to handle this.
+def extract_step_data(df_particles, plotstart, plotend, searchstart, searchend, bgstart, bgend, instrument = 'step', data_type = 'l2', averaging_mode='none', averaging=2, masking=False, ion_conta_corr=False):
+
+    return extract_data(df_particles, df_particles, plotstart, plotend, searchstart, searchend, bgstart, bgend, instrument = 'step', data_type = 'l2', averaging_mode='none', averaging=2, masking=False, ion_conta_corr=False)
+
+def make_step_electron_flux(stepdata, mask_conta=True):
     '''
     here we use the calibration factors from Paco (Alcala) to calculate the electron flux out of the (integral - magnet) fluxes (we now use level2 data files to get these)
     we also check if the integral counts are sufficiently higher than the magnet counts so that we can really assume it's electrons (otherwise we mask the output arrays)
@@ -193,6 +241,7 @@ def make_step_electron_flux(stepdata, mask_conta=False):
     param_list = ['Electron_Flux', 'Electron_Uncertainty']
 
     if mask_conta:
+
         C_INT = stepdata['Integral_Rate']
         C_MAG = stepdata['Magnet_Rate']
         clean = (C_INT - C_MAG) > 5*np.sqrt(C_INT)
@@ -204,16 +253,20 @@ def make_step_electron_flux(stepdata, mask_conta=False):
     df_electron_uncertainties = step_data['Electron_Uncertainty']
 
     for channel in df_electron_fluxes:
+
         df_electron_fluxes = df_electron_fluxes.rename(columns={channel:'Electron_Flux_{}'.format(channel)})
+
     for channel in df_electron_uncertainties:
+
         df_electron_uncertainties = df_electron_uncertainties.rename(columns={channel:'Electron_Uncertainty_{}'.format(channel)})
 
     return df_electron_fluxes, df_electron_uncertainties, paco.E_low, paco.E_hi
 
 def average_flux_error(flux_err: pd.DataFrame) -> pd.Series:
+
     return np.sqrt((flux_err ** 2).sum(axis=0)) / len(flux_err.values)
 
-def plot_channels(args, bg_subtraction=False, savefig=False, key=''):
+def plot_channels(args, bg_subtraction=False, savefig=False, path='', key=''):
 
     hours = mdates.HourLocator(interval = 1)
     df_electron_fluxes = args[0]
@@ -223,7 +276,38 @@ def plot_channels(args, bg_subtraction=False, savefig=False, key=''):
     instrument = args[4][0]
     data_type = args[4][1]
 
-    # If background subtraction is enabled, subtracts bg_flux from all observations. If flux value is negative, changes it to 0.
+    title_string = instrument.upper() + ', ' + data_type.upper() + ', ' + str(df_info['Plot_period'][0][:-5])
+    filename = 'channels-' + str(df_info['Plot_period'][0][:-5]) + '-' + instrument.upper() + '-' + data_type.upper() 
+    
+    if(df_info['Averaging'][0]=='Mean'):
+
+        title_string = title_string + ', ' + df_info['Averaging'][1].split()[2] + ' averaging'
+        filename = filename + '-' + df_info['Averaging'][1].split()[2] + '_averaging'
+
+    elif(df_info['Averaging'][0]=='No averaging'):
+
+        title_string = title_string + ', no averaging'
+        filename = filename + '-no_averaging'
+
+    if(bg_subtraction):
+        
+       title_string = title_string + ', bg subtraction on'
+       filename = filename + '-bg_subtr'
+
+    else:
+
+        title_string = title_string + ', bg subtraction off'
+
+    if(df_info['Ion_contamination_correction'][0] and instrument=='ept'):
+
+        title_string = title_string + ', ion correction on'
+        filename = filename + '-ion_corr'
+
+    elif(df_info['Ion_contamination_correction'][0]==False and instrument=='ept'):
+
+        title_string = title_string + ', ion correction off'
+
+    # If background subtraction is enabled, subtracts bg_flux from all observations. If flux value is negative, changes it to NaN.
     if(bg_subtraction == False):
         pass
     elif(bg_subtraction == True):
@@ -237,16 +321,14 @@ def plot_channels(args, bg_subtraction=False, savefig=False, key=''):
     plt.yticks([])
     plt.ylabel("Flux \n [1/s cm$^2$ sr MeV]", labelpad=40)
     plt.xlabel("Time", labelpad=45)
-    if(bg_subtraction==False):
-        plt.title(str(instrument) + ', ' + str(data_type) + ', ' + str(df_info['Plot_start'][0][:-5]) + ", bg subtraction off, " + str(df_info['Averaging'][0]) + ', ' + str(df_info['Averaging'][1]))
-    elif(bg_subtraction==True):
-        plt.title(str(instrument) + ', ' + str(data_type) + ', ' + str(df_info['Plot_start'][0][:-5]) + ", bg subtraction on, " + str(df_info['Averaging'][0]) + ', ' + str(df_info['Averaging'][1]))
+    plt.title(title_string)
 
-    # Loop through selected energy channels and creates a subplot for each.
+    # Loop through selected energy channels and create a subplot for each.
     n=1
     for channel in df_info['Energy_channel']:
+
         ax = fig.add_subplot(len(df_info['Energy_channel']),1,n)
-        ax = df_electron_fluxes['Electron_Flux_{}'.format(channel)].plot(logy=True, figsize=(20,25), color='red')
+        ax = df_electron_fluxes['Electron_Flux_{}'.format(channel)].plot(logy=True, figsize=(20,25), color='red', drawstyle='steps-mid')
 
         plt.text(0.025,0.7, str(energy_bin[0][channel]) + " - " + str(energy_bin[1][channel]) + " MeV", transform=ax.transAxes, size=13)
 
@@ -258,11 +340,12 @@ def plot_channels(args, bg_subtraction=False, savefig=False, key=''):
         ax.axvline(df_info['Peak_timestamp'][n-1], color='green')
 
         # Background measurement area.
-        ax.axvspan(df_info['Bg_start'][0], df_info['Bg_end'][0], color='gray', alpha=0.25)
+        ax.axvspan(df_info['Bg_period'][0], df_info['Bg_period'][1], color='gray', alpha=0.25)
 
         ax.get_xaxis().set_visible(False)
 
         if(n == len(df_info['Energy_channel'])):
+
             ax.get_xaxis().set_visible(True)
 
         plt.xlabel("")
@@ -272,32 +355,91 @@ def plot_channels(args, bg_subtraction=False, savefig=False, key=''):
         n+=1
 
     # Saves figure, if enabled.
+    if(path[len(path)-1] != '/'):
+
+        path = path + '/'
+
     if(savefig):
-        if(bg_subtraction):
-            plt.savefig('/home/smurf/srl/images/channels-' + str(df_info['Plot_start'][0][:-5]) + '-' + instrument + '-' + data_type + '-' + str(df_info['Averaging'][1]) + '-bg_subtracted' + str(key) +'.jpg', bbox_inches='tight')
-        else:
-            plt.savefig('/home/smurf/srl/images/channels-' + str(df_info['Plot_start'][0][:-5]) + '-' + instrument + '-' + data_type + '-' + str(df_info['Averaging'][1]) + str(key) +'.jpg', bbox_inches='tight')
+
+        plt.savefig(path + filename + str(key) +'.jpg', bbox_inches='tight')
 
     plt.show()
 
-def plot_spectrum(args, bg_subtraction=True, savefig=False, key=''):
+# This plot_check function is not finished, but it does produce cool rainbow colored plots.
+def plot_check(args, bg_subtraction=False, savefig=False, key=''):
+
+    hours = mdates.HourLocator(interval = 1)
+    df_electron_fluxes = args[0]
+    df_info = args[1]
+    search_area = args[2]
+    energy_bin = args[3]
+    instrument = args[4][0]
+    data_type = args[4][1]
+
+    fig = plt.figure()
+    colors = iter(plt.cm.jet(np.linspace(0, 1, len(df_info['Energy_channel']))))
+
+    #for channel in df_info['Energy_channel']:
+    #    ax = df_electron_fluxes['Electron_Flux_{}'.format(channel)].plot(logy=True, figsize=(20,25), color='red', drawstyle='steps-mid')
+
+    for channel in df_info['Energy_channel']:
+
+        col = next(colors)
+        ax = df_electron_fluxes['Electron_Flux_{}'.format(channel)].plot(logy=True, figsize=(13,10), color=col, drawstyle='steps-mid')
+
+    plt.show()
+
+def plot_spectrum(args, bg_subtraction=True, savefig=False, path='', key=''):
 
     df_info = args[1]
     instrument = args[4][0]
     data_type = args[4][1]
+    
+    title_string = instrument.upper() + ', ' + data_type.upper() + ', ' + str(df_info['Plot_period'][0][:-5])
+    filename = 'spectrum-' + str(df_info['Plot_period'][0][:-5]) + '-' + instrument.upper() + '-' + data_type.upper() 
+    
+    if(df_info['Averaging'][0]=='Mean'):
+
+        title_string = title_string + ', ' + df_info['Averaging'][1].split()[2] + ' averaging'
+        filename = filename + '-' + df_info['Averaging'][1].split()[2] + '_averaging'
+
+    elif(df_info['Averaging'][0]=='No averaging'):
+
+        title_string = title_string + ', no averaging'
+        filename = filename + '-no_averaging'
+
+    if(bg_subtraction):
+        
+       title_string = title_string + ', bg subtraction on'
+       filename = filename + '-bg_subtr'
+
+    else:
+
+        title_string = title_string + ', bg subtraction off'
+
+    if(df_info['Ion_contamination_correction'][0] and instrument=='ept'):
+
+        title_string = title_string + ', ion correction on'
+        filename = filename + '-ion_corr'
+
+    elif(df_info['Ion_contamination_correction'][0]==False and instrument=='ept'):
+
+        title_string = title_string + ', ion correction off'
+
+
 
     # Plots either the background subtracted or raw flux peaks depending on choice.
     if(bg_subtraction):
+
         ax = df_info.plot.scatter(x='Primary_energy', y='Bg_subtracted_peak', c='red', label='Flux peaks', figsize=(13,10))
         ax.errorbar(x=df_info['Primary_energy'], y=df_info['Bg_subtracted_peak'], yerr=df_info['Peak_electron_uncertainty'],
                     xerr=[df_info['Energy_error_low'], df_info['Energy_error_high']], fmt='.', ecolor='red', alpha=0.5)
-        plt.title(str(instrument) + ', ' + str(data_type) + ', ' + str(df_info['Plot_start'][0][:-5]) + ' flux peaks, bg subtraction on, ' + str(df_info['Averaging'][0]) + ', ' + str(df_info['Averaging'][1]), size=18)
     elif(bg_subtraction == False):
+
         ax = df_info.plot.scatter(x='Primary_energy', y='Flux_peak', c='red', label='Flux peaks', figsize=(13,10))
         ax.errorbar(x=df_info['Primary_energy'], y=df_info['Flux_peak'], yerr=df_info['Peak_electron_uncertainty'],
                     xerr=[df_info['Energy_error_low'], df_info['Energy_error_high']], fmt='.', ecolor='red', alpha=0.5)
-        plt.title(str(instrument) + ', ' + str(data_type) + ', ' + str(df_info['Plot_start'][0][:-5]) + ' flux peaks, bg subtraction off, ' + str(df_info['Averaging'][0]) + ', ' + str(df_info['Averaging'][1]), size=18)
-
+    
     # Plots background flux and background errorbars in same scatterplot.
     df_info.plot(kind='scatter', x='Primary_energy', y='Background_flux', c='red', alpha=0.25, ax=ax, label='Background flux')
     ax.errorbar(x=df_info['Primary_energy'], y=df_info['Background_flux'], yerr=df_info['Bg_electron_uncertainty'], xerr=[df_info['Energy_error_low'],df_info['Energy_error_high']],
@@ -315,26 +457,45 @@ def plot_spectrum(args, bg_subtraction=True, savefig=False, key=''):
     plt.xticks(size=16)
     plt.yticks(size=16)
     plt.grid()
+    plt.title(title_string)
 
     for label in ax.xaxis.get_ticklabels(which='minor')[1::2]:
+
         label.set_visible(False)
+    
+    if(path[len(path)-1] != '/'):
+
+        path = path + '/'
 
     if(savefig):
-        if(bg_subtraction):
-            plt.savefig('/home/smurf/srl/images/spectrum-' + str(df_info['Plot_start'][0][:-5]) + '-' + instrument + '-' + data_type + '-' + str(df_info['Averaging'][1]) + '-bg_subtracted' + str(key) +'.jpg', dpi=300, bbox_inches='tight')
-        else:
-            plt.savefig('/home/smurf/srl/images/spectrum-' + str(df_info['Plot_start'][0][:-5]) + '-' + instrument + '-' + data_type + '-' + str(df_info['Averaging'][1]) + str(key) +'.jpg', dpi=300, bbox_inches='tight')
+
+        plt.savefig(path + filename + str(key) +'.jpg', dpi=300, bbox_inches='tight')
 
     plt.show()
 
-def write_to_csv(args, key=''):
+def write_to_csv(args, path='', key=''):
 
     df_info = args[1]
     instrument = args[4][0]
     data_type = args[4][1]
+    
+    filename = 'electron_data-' + str(df_info['Plot_period'][0][:-5]) + '-' + instrument.upper() + '-' + data_type.upper()
 
-    df_info.to_csv('/home/smurf/srl/csv/electron_data-' + str(df_info['Plot_start'][0][:-5]) + '-' + instrument + '-' + data_type + '-' + str(df_info['Averaging'][1]) + str(key) + '.csv', index=False)
+    if(df_info['Averaging'] == 'Mean'):
+        
+        filename = filename + '-' + df_info['Averaging'][1].split()[2] + '_averaging'
 
+    elif(df_info['Averaging'] == 'No averaging'):
+
+        filename = filename + '-no_averaging'
+
+    if(df_info['Ion_contamination_correction'][0] and instrument == 'ept'):
+
+        filename = filename + '-ion_corr'
+
+    df_info.to_csv(path + filename + str(key) + '.csv', index=False)
+
+# This acc_flux function is not really finished, just something I put together quickly.
 def acc_flux(args, time=[]):
 
     df_electron_fluxes = args[0]
@@ -342,11 +503,14 @@ def acc_flux(args, time=[]):
 
     # If no timeframe specified, use search area.
     if(time==[]):
+
         time = args[2]
 
     # Calculates average fluxes for each enery channel from given timeframe and appends to list.
     list_flux_averages = []
+
     for channel in df_info['Energy_channel']:
+
         list_flux_averages.append(df_electron_fluxes['Electron_Flux_{}'.format(channel)][time[0]:time[1]].mean())
 
     df_acc = pd.DataFrame({'Primary_energy':[], 'Acc_flux':[]})
