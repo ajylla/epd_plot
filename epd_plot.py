@@ -101,15 +101,34 @@ def extract_data(df_protons, df_electrons, plotstart, plotend, searchstart, sear
 
         df_electron_fluxes = df_electron_fluxes - Electron_Flux_cont
         df_electron_uncertainties = np.sqrt(df_electron_uncertainties**2 + Electron_Uncertainty_cont**2 )
+    
+    if(instrument=='ept'):
+
+        ion_string = 'Ion_contamination_correction'
+
+    elif(instrument=='step'):
+
+        ion_string = 'Ion_masking'
+
+    elif(instrument=='het'):
+
+        ion_string = ''
 
     # Main information dataframe containing most of the required data.
-    df_info = pd.DataFrame({'Plot_period':[], 'Search_period':[], 'Bg_period':[], 'Averaging':[], 'Ion_contamination_correction':[], 'Energy_channel':[], 'Primary_energy':[], 'Energy_error_low':[], 'Energy_error_high':[], 'Peak_timestamp':[], 'Flux_peak':[], 'Peak_significance':[], 'Peak_electron_uncertainty':[], 'Background_flux':[],'Bg_electron_uncertainty':[], 'Bg_subtracted_peak':[]})
+    df_info = pd.DataFrame({'Plot_period':[], 'Search_period':[], 'Bg_period':[], 'Averaging':[], '{}'.format(ion_string):[], 'Energy_channel':[], 'Primary_energy':[], 'Energy_error_low':[], 'Energy_error_high':[], 'Peak_timestamp':[], 'Flux_peak':[], 'Peak_significance':[], 'Peak_electron_uncertainty':[], 'Background_flux':[],'Bg_electron_uncertainty':[], 'Bg_subtracted_peak':[]})
 
     # Adds basic metadata to main info df.
     df_info['Plot_period'] = [plotstart]+[plotend]+['']*(len(channels)-2)
     df_info['Search_period'] = [searchstart]+[searchend]+['']*(len(channels)-2)
     df_info['Bg_period'] = [bgstart]+[bgend]+['']*(len(channels)-2)
-    df_info['Ion_contamination_correction'] = [ion_conta_corr]+['']*(len(channels)-1)
+
+    if(instrument=='ept'):
+
+        df_info['Ion_contamination_correction'] = [ion_conta_corr]+['']*(len(channels)-1)
+
+    elif(instrument=='step'):
+
+        df_info['Ion_masking'] = [masking]+['']*(len(channels)-1)
 
     if(averaging_mode == 'none'):
 
@@ -297,15 +316,17 @@ def plot_channels(args, bg_subtraction=False, savefig=False, path='', key=''):
     else:
 
         title_string = title_string + ', bg subtraction off'
+    
+    if(instrument == 'ept'):
+        
+        if(df_info['Ion_contamination_correction'][0]):
 
-    if(df_info['Ion_contamination_correction'][0] and instrument=='ept'):
+            title_string = title_string + ', ion correction on'
+            filename = filename + '-ion_corr'
 
-        title_string = title_string + ', ion correction on'
-        filename = filename + '-ion_corr'
+        elif(df_info['Ion_contamination_correction'][0]==False):
 
-    elif(df_info['Ion_contamination_correction'][0]==False and instrument=='ept'):
-
-        title_string = title_string + ', ion correction off'
+            title_string = title_string + ', ion correction off'
 
     # If background subtraction is enabled, subtracts bg_flux from all observations. If flux value is negative, changes it to NaN.
     if(bg_subtraction == False):
@@ -416,15 +437,17 @@ def plot_spectrum(args, bg_subtraction=True, savefig=False, path='', key=''):
     else:
 
         title_string = title_string + ', bg subtraction off'
+    
+    if(instrument == 'ept'):
 
-    if(df_info['Ion_contamination_correction'][0] and instrument=='ept'):
+        if(df_info['Ion_contamination_correction'][0] and instrument=='ept'):
 
-        title_string = title_string + ', ion correction on'
-        filename = filename + '-ion_corr'
+            title_string = title_string + ', ion correction on'
+            filename = filename + '-ion_corr'
 
-    elif(df_info['Ion_contamination_correction'][0]==False and instrument=='ept'):
+        elif(df_info['Ion_contamination_correction'][0]==False):
 
-        title_string = title_string + ', ion correction off'
+            title_string = title_string + ', ion correction off'
 
 
 
@@ -489,9 +512,11 @@ def write_to_csv(args, path='', key=''):
 
         filename = filename + '-no_averaging'
 
-    if(df_info['Ion_contamination_correction'][0] and instrument == 'ept'):
+    if(instrument == 'ept'):
 
-        filename = filename + '-ion_corr'
+        if(df_info['Ion_contamination_correction'][0]):
+
+            filename = filename + '-ion_corr'
 
     df_info.to_csv(path + filename + str(key) + '.csv', index=False)
 
