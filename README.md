@@ -2,6 +2,8 @@
 
 ## epd_plot.py
 
+<This repo is deprecated>
+
 This Python script is for plotting and extracting data from the raw data of Solar Orbiters EPT, HET and STEP instruments. <br>
 It works in conjunction with epd_loader, which fetches and loads the raw data from [ESA](http://soar.esac.esa.int/soar).
 
